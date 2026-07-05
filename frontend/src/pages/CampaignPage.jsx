@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
 import { getCampaigns, createCampaign, getTemplates, getLeads, startCampaign, pauseCampaign, stopCampaign, resumeCampaign, getSenders, deleteCampaign } from '../services/api';
-import { Plus, X, Play, Pause, Square, CheckSquare, Search, Trash2, Megaphone, Trash, RefreshCw } from 'lucide-react';
+import { Plus, X, Play, Pause, Square, CheckSquare, Search, Trash2, Megaphone, Trash, RefreshCw, Sparkles } from 'lucide-react';
 
 export default function CampaignPage() {
   const [campaigns, setCampaigns] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [leads, setLeads] = useState([]);
   const [senders, setSenders] = useState([]);
-  const [form, setForm] = useState({ name: '', template_id: '', sender_id: '', lead_ids: [] });
+  const [form, setForm] = useState({ name: '', template_id: '', sender_id: '', use_ai_personalization: false, ai_subject: '', ai_prompt: '', lead_ids: [] });
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [topN, setTopN] = useState('');
@@ -24,20 +24,25 @@ export default function CampaignPage() {
 
   const handleCreate = async (e) => {
     e.preventDefault();
-    if (!form.template_id) return alert("Select a template");
+    
+    if (!form.use_ai_personalization && !form.template_id) return alert("Select a template");
+    if (form.use_ai_personalization && (!form.ai_subject || !form.ai_prompt)) return alert("Fill in the AI Subject and Prompt");
     if (form.lead_ids.length === 0) return alert("Select at least one lead");
     
-    // Parse sender_id if it's set
     const payload = { 
       ...form, 
-      template_id: parseInt(form.template_id),
+      template_id: form.use_ai_personalization ? null : parseInt(form.template_id),
       sender_id: form.sender_id ? parseInt(form.sender_id) : null
     };
 
-    await createCampaign(payload);
-    setForm({ name: '', template_id: '', sender_id: '', lead_ids: [] });
-    setShowForm(false);
-    loadData();
+    try {
+      await createCampaign(payload);
+      setForm({ name: '', template_id: '', sender_id: '', use_ai_personalization: false, ai_subject: '', ai_prompt: '', lead_ids: [] });
+      setShowForm(false);
+      loadData();
+    } catch (err) {
+      alert(err.response?.data?.detail || "Error creating campaign");
+    }
   };
 
   const handleAction = async (id, action) => {
@@ -58,6 +63,9 @@ export default function CampaignPage() {
       name: `${c.name} (Relaunch)`, 
       template_id: c.template_id || '', 
       sender_id: c.sender_id || '', 
+      use_ai_personalization: c.use_ai_personalization || false,
+      ai_subject: c.ai_subject || '',
+      ai_prompt: c.ai_prompt || '',
       lead_ids: [] 
     });
     setStatusFilter('PENDING'); // Auto-filter to show only pending leads
@@ -142,7 +150,7 @@ export default function CampaignPage() {
           <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-6">Create New Campaign</h3>
           
           <form onSubmit={handleCreate} className="flex flex-col gap-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="flex flex-col gap-2">
                 <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Campaign Name</label>
                 <input 
@@ -152,18 +160,6 @@ export default function CampaignPage() {
                   onChange={e => setForm({...form, name: e.target.value})} 
                   required 
                 />
-              </div>
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Email Template</label>
-                <select 
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 outline-none transition-all text-sm font-medium" 
-                  value={form.template_id} 
-                  onChange={e => setForm({...form, template_id: e.target.value})} 
-                  required
-                >
-                  <option value="" className="dark:bg-slate-900">Select Template...</option>
-                  {templates.map(t => <option key={t.id} value={t.id} className="dark:bg-slate-900">{t.name}</option>)}
-                </select>
               </div>
               <div className="flex flex-col gap-2">
                 <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Sender Account</label>
@@ -178,7 +174,78 @@ export default function CampaignPage() {
               </div>
             </div>
 
-            <div className="border border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900 shadow-sm overflow-hidden flex flex-col transition-colors">
+            {/* AI Toggle */}
+            <div className="flex flex-col gap-2">
+              <label className="flex items-center gap-4 cursor-pointer p-5 border-2 border-purple-100 dark:border-purple-900/50 rounded-2xl bg-purple-50/50 dark:bg-purple-900/10 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-all group">
+                <div className="flex items-center justify-center w-12 h-12 bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 rounded-xl group-hover:scale-105 transition-transform shadow-sm">
+                  <Sparkles size={24} strokeWidth={2.5} />
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-1">Enable AI Prompt Generation</h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed max-w-3xl">
+                    Instead of using a static template, write a direct prompt instruction to Gemini. It will automatically research the prospect's company and generate a highly personalized email from scratch based on your instructions.
+                  </p>
+                </div>
+                <div className="pl-4">
+                  <div className={`w-14 h-7 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-300 ${form.use_ai_personalization ? 'bg-purple-600' : 'bg-slate-300 dark:bg-slate-700'}`}>
+                    <div className={`bg-white w-5 h-5 rounded-full shadow-md transform transition-transform duration-300 ${form.use_ai_personalization ? 'translate-x-7' : 'translate-x-0'}`}>
+                      <input 
+                        type="checkbox" 
+                        className="sr-only"
+                        checked={form.use_ai_personalization}
+                        onChange={e => setForm({...form, use_ai_personalization: e.target.checked})}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            {form.use_ai_personalization ? (
+              <div className="grid grid-cols-1 gap-6 p-6 bg-purple-50/30 dark:bg-purple-900/5 border border-purple-100 dark:border-purple-800/30 rounded-2xl animate-in fade-in zoom-in-95 duration-200">
+                <h4 className="font-bold text-purple-700 dark:text-purple-400 -mb-2 flex items-center gap-2">
+                  <Sparkles size={16} /> AI Configuration
+                </h4>
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                    Email Subject Line <span className="text-xs font-normal text-slate-500">(Supports {'{{name}}'}, {'{{company}}'})</span>
+                  </label>
+                  <input 
+                    className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white px-4 py-3 rounded-xl focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 outline-none transition-all text-sm font-medium" 
+                    placeholder="e.g. Exploring synergies with {{company}}" 
+                    value={form.ai_subject} 
+                    onChange={e => setForm({...form, ai_subject: e.target.value})} 
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                    AI Writing Instructions / Prompt
+                  </label>
+                  <textarea 
+                    className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white px-4 py-3 rounded-xl h-32 focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 outline-none transition-all text-sm font-medium placeholder:text-slate-400 dark:placeholder:text-slate-500 resize-y" 
+                    placeholder="e.g. Write a cold email offering our B2B SaaS web design services. Keep it under 100 words. Focus on building trust and ask for a 10 min call." 
+                    value={form.ai_prompt} 
+                    onChange={e => setForm({...form, ai_prompt: e.target.value})} 
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-6 animate-in fade-in zoom-in-95 duration-200">
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Email Template</label>
+                  <select 
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 outline-none transition-all text-sm font-medium" 
+                    value={form.template_id} 
+                    onChange={e => setForm({...form, template_id: e.target.value})} 
+                  >
+                    <option value="" className="dark:bg-slate-900">Select Template...</option>
+                    {templates.map(t => <option key={t.id} value={t.id} className="dark:bg-slate-900">{t.name}</option>)}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            <div className="border border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900 shadow-sm overflow-hidden flex flex-col transition-colors mt-2">
               
               {/* Segments & Quick Stats */}
               <div className="bg-slate-50 dark:bg-slate-950 p-3 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row justify-between items-center gap-4">

@@ -4,6 +4,7 @@ import logging
 import os
 import smtplib
 import mimetypes
+import openai
 from email.message import EmailMessage
 from email.utils import make_msgid, formatdate
 from datetime import datetime, timedelta
@@ -87,6 +88,43 @@ def get_retry_delay(retry_count: int) -> int:
         return 30
     return 120
 
+def generate_ai_email_from_prompt(company_name: str, lead_name: str, custom_prompt: str) -> str:
+    """
+    Uses Google Gemini to dynamically generate the entire email body based on a custom prompt.
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key or len(api_key) < 10:
+        logger.warning(f"Skipping AI generation for {company_name}: No valid GEMINI_API_KEY found in .env")
+        return f"Error: No valid GEMINI_API_KEY found in the backend .env file. Could not generate email for {lead_name}."
+
+    try:
+        from google import genai
+        client = genai.Client(api_key=api_key)
+
+        prompt = f"""
+You are an elite B2B sales copywriter. I need you to write a highly personalized cold email for a prospect named '{lead_name}' at the company '{company_name}'.
+
+User Instructions / Base Prompt:
+{custom_prompt}
+
+Task:
+1. Briefly infer or search your knowledge base for what '{company_name}' does.
+2. Weave a highly personalized compliment or observation about their specific industry or product into the email naturally.
+3. Strictly follow the core message, tone, and Call to Action requested in the User Instructions above.
+4. DO NOT add a subject line. ONLY return the final email body text.
+5. Keep the formatting clean with appropriate paragraph breaks.
+"""
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+        )
+        ai_body = response.text.strip()
+        logger.info(f"Successfully generated AI email for {company_name} using Gemini")
+        return ai_body
+    except Exception as e:
+        logger.error(f"AI Generation failed for {company_name}: {e}")
+        return f"Error: AI generation failed. Please check backend logs. Details: {str(e)}"
+
 def can_send_email(db: Session) -> bool:
     now = datetime.utcnow()
     hour_ago = now - timedelta(hours=1)
@@ -157,10 +195,6 @@ async def email_sender_worker():
                 continue
                 
             lead = log.lead
-            template = campaign.template
-            
-            subj_tpl = JinjaTemplate(template.subject)
-            body_tpl = JinjaTemplate(template.body)
             
             # Find the sender
             if campaign.sender_id:
@@ -170,15 +204,34 @@ async def email_sender_worker():
                 if not sender_acc:
                     sender_acc = db.query(Sender).first() # Fallback to any sender if no default
 
-            subject = subj_tpl.render(name=lead.name, company=lead.company)
-            body = body_tpl.render(name=lead.name, company=lead.company)
+            # Execute AI or standard templating
+            attachment_path = None
+            if campaign.use_ai_personalization:
+                # Use AI specific subjects and prompts
+                subj_tpl = JinjaTemplate(campaign.ai_subject)
+                subject = subj_tpl.render(name=lead.name, company=lead.company)
+                
+                logger.info(f"Initiating AI generation for company: {lead.company}...")
+                body = generate_ai_email_from_prompt(lead.company, lead.name, campaign.ai_prompt)
+            else:
+                # Use standard template
+                template = campaign.template
+                if not template:
+                    raise Exception(f"Campaign {campaign.id} is missing a template and AI is not enabled")
+                    
+                subj_tpl = JinjaTemplate(template.subject)
+                body_tpl = JinjaTemplate(template.body)
+                
+                subject = subj_tpl.render(name=lead.name, company=lead.company)
+                body = body_tpl.render(name=lead.name, company=lead.company)
+                attachment_path = template.attachment_path
 
             log.status = "SENDING"
             log.subject = subject
             db.commit()
 
             logger.info(f"Sending email to {lead.email}...")
-            result = send_real_email(lead.email, subject, body, template.attachment_path, sender_acc)
+            result = send_real_email(lead.email, subject, body, attachment_path, sender_acc)
             
             log.provider_message_id = result["msg_id"]
             log.error_message = result["error"]

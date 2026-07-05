@@ -9,6 +9,7 @@ const api = axios.create({
 export const getLeads = () => api.get('/leads/');
 export const createLead = (data) => api.post('/leads/', data);
 export const deleteLead = (id) => api.delete(`/leads/${id}`);
+export const deleteLeadsBulk = (ids) => api.post('/leads/bulk_delete', { lead_ids: ids });
 export const uploadLeads = (formData) => api.post('/leads/upload', formData);
 
 export const getTemplates = () => api.get('/templates/');

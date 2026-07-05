@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { getLeads, createLead, deleteLead, uploadLeads } from '../services/api';
-import { Plus, X, Users, CheckCircle2, Clock } from 'lucide-react';
+import { getLeads, createLead, deleteLead, uploadLeads, deleteLeadsBulk } from '../services/api';
+import { Plus, X, Users, CheckCircle2, Clock, Trash2 } from 'lucide-react';
 
 export default function LeadsPage() {
   const [leads, setLeads] = useState([]);
@@ -9,6 +9,7 @@ export default function LeadsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [showForm, setShowForm] = useState(false);
+  const [selectedLeadIds, setSelectedLeadIds] = useState(new Set());
 
   const loadLeads = () => getLeads().then(res => setLeads(res.data)).catch(console.error);
   
@@ -32,6 +33,35 @@ export default function LeadsPage() {
     loadLeads();
   };
 
+  const handleSelectAll = (e) => {
+    if (e.target.checked) {
+      // Select all currently filtered leads
+      setSelectedLeadIds(new Set(filteredLeads.map(l => l.id)));
+    } else {
+      // Deselect all
+      setSelectedLeadIds(new Set());
+    }
+  };
+
+  const toggleLeadSelection = (id) => {
+    const newSelected = new Set(selectedLeadIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedLeadIds(newSelected);
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedLeadIds.size === 0) return;
+    if (window.confirm(`Are you sure you want to delete ${selectedLeadIds.size} leads?`)) {
+      await deleteLeadsBulk(Array.from(selectedLeadIds));
+      setSelectedLeadIds(new Set());
+      loadLeads();
+    }
+  };
+
   const totalLeads = leads.length;
   const sentLeadsCount = leads.filter(l => l.status === 'SENT').length;
   const pendingLeadsCount = leads.filter(l => l.status !== 'SENT').length;
@@ -47,6 +77,8 @@ export default function LeadsPage() {
       l.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
       l.company.toLowerCase().includes(searchTerm.toLowerCase())
     );
+
+  const isAllFilteredSelected = filteredLeads.length > 0 && filteredLeads.every(l => selectedLeadIds.has(l.id));
 
   return (
     <div className="pb-10">
@@ -135,20 +167,38 @@ export default function LeadsPage() {
             </button>
           </div>
 
-          <input
-            type="text"
-            placeholder="Search leads..."
-            className="w-full sm:w-72 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 outline-none transition-all text-sm font-medium placeholder:text-slate-400 dark:placeholder:text-slate-500"
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-          />
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            {selectedLeadIds.size > 0 && (
+              <button 
+                onClick={handleBulkDelete}
+                className="flex items-center gap-2 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20 px-4 py-2.5 rounded-xl text-sm font-bold transition-colors"
+              >
+                <Trash2 size={16} strokeWidth={2.5} /> Delete {selectedLeadIds.size}
+              </button>
+            )}
+            <input
+              type="text"
+              placeholder="Search leads..."
+              className="w-full sm:w-72 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 outline-none transition-all text-sm font-medium placeholder:text-slate-400 dark:placeholder:text-slate-500"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+            />
+          </div>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 dark:bg-slate-950/50 border-b border-slate-200 dark:border-slate-800 transition-colors uppercase text-[10px] font-bold tracking-wider">
               <tr className="text-slate-500 dark:text-slate-400">
-                <th className="p-5">Name</th>
+                <th className="p-5 w-10">
+                  <input 
+                    type="checkbox" 
+                    checked={isAllFilteredSelected}
+                    onChange={handleSelectAll}
+                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 bg-transparent dark:border-slate-500 cursor-pointer"
+                  />
+                </th>
+                <th className="py-5 pr-5">Name</th>
                 <th className="p-5">Company</th>
                 <th className="p-5">Email</th>
                 <th className="p-5">Status</th>
@@ -158,7 +208,15 @@ export default function LeadsPage() {
             <tbody className="text-slate-900 dark:text-slate-100 divide-y divide-slate-100 dark:divide-slate-800/60">
               {filteredLeads.map(lead => (
                 <tr key={lead.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
-                  <td className="p-5 font-bold">{lead.name}</td>
+                  <td className="p-5 w-10">
+                    <input 
+                      type="checkbox" 
+                      checked={selectedLeadIds.has(lead.id)}
+                      onChange={() => toggleLeadSelection(lead.id)}
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 bg-transparent dark:border-slate-500 cursor-pointer"
+                    />
+                  </td>
+                  <td className="py-5 pr-5 font-bold">{lead.name}</td>
                   <td className="p-5 text-slate-600 dark:text-slate-400 font-medium">{lead.company}</td>
                   <td className="p-5 text-slate-500 dark:text-slate-500 font-medium">{lead.email}</td>
                   <td className="p-5">

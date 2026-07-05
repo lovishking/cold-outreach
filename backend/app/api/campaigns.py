@@ -10,11 +10,24 @@ router = APIRouter(prefix="/api/campaigns", tags=["Campaigns"])
 
 @router.post("/", response_model=CampaignResponse)
 def create_campaign(campaign: CampaignCreate, db: Session = Depends(get_db)):
-    template = db.query(Template).filter(Template.id == campaign.template_id).first()
-    if not template:
-        raise HTTPException(status_code=404, detail="Template not found")
+    if campaign.use_ai_personalization:
+        if not campaign.ai_subject or not campaign.ai_prompt:
+            raise HTTPException(status_code=400, detail="AI Subject and AI Prompt are required when AI personalization is enabled")
+    else:
+        if not campaign.template_id:
+            raise HTTPException(status_code=400, detail="Template ID is required when AI personalization is disabled")
+        template = db.query(Template).filter(Template.id == campaign.template_id).first()
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
         
-    new_campaign = Campaign(name=campaign.name, template_id=campaign.template_id, sender_id=campaign.sender_id)
+    new_campaign = Campaign(
+        name=campaign.name, 
+        template_id=campaign.template_id if not campaign.use_ai_personalization else None, 
+        sender_id=campaign.sender_id,
+        use_ai_personalization=campaign.use_ai_personalization,
+        ai_subject=campaign.ai_subject if campaign.use_ai_personalization else None,
+        ai_prompt=campaign.ai_prompt if campaign.use_ai_personalization else None
+    )
     db.add(new_campaign)
     db.commit()
     db.refresh(new_campaign)
@@ -38,6 +51,9 @@ def create_campaign(campaign: CampaignCreate, db: Session = Depends(get_db)):
         "name": new_campaign.name,
         "template_id": new_campaign.template_id,
         "sender_id": new_campaign.sender_id,
+        "use_ai_personalization": new_campaign.use_ai_personalization,
+        "ai_subject": new_campaign.ai_subject,
+        "ai_prompt": new_campaign.ai_prompt,
         "status": new_campaign.status,
         "emails_sent": new_campaign.emails_sent,
         "emails_left": valid_leads,
@@ -60,6 +76,9 @@ def get_campaigns(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
             "name": c.name,
             "template_id": c.template_id,
             "sender_id": c.sender_id,
+            "use_ai_personalization": c.use_ai_personalization,
+            "ai_subject": c.ai_subject,
+            "ai_prompt": c.ai_prompt,
             "status": c.status,
             "emails_sent": c.emails_sent,
             "emails_left": left,

@@ -33,6 +33,9 @@ class Campaign(Base):
     name = Column(String)
     template_id = Column(Integer, ForeignKey("templates.id"))
     sender_id = Column(Integer, ForeignKey("senders.id"), nullable=True)
+    use_ai_personalization = Column(Boolean, default=False)
+    ai_subject = Column(String, nullable=True)
+    ai_prompt = Column(Text, nullable=True)
     status = Column(String, default="DRAFT") # DRAFT, RUNNING, PAUSED, STOPPED, FINISHED
     emails_sent = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)

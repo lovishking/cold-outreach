@@ -2,7 +2,8 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 from datetime import datetime
 
-# Lead Schemas
+class BulkDeleteRequest(BaseModel):
+    lead_ids: List[int]
 class LeadBase(BaseModel):
     name: str
     company: str
@@ -58,15 +59,21 @@ class TemplatePreview(BaseModel):
 # Campaign Schemas
 class CampaignCreate(BaseModel):
     name: str
-    template_id: int
+    template_id: Optional[int] = None
     sender_id: Optional[int] = None
+    use_ai_personalization: bool = False
+    ai_subject: Optional[str] = None
+    ai_prompt: Optional[str] = None
     lead_ids: List[int] = []
 
 class CampaignResponse(BaseModel):
     id: int
     name: str
-    template_id: int
+    template_id: Optional[int] = None
     sender_id: Optional[int] = None
+    use_ai_personalization: bool
+    ai_subject: Optional[str] = None
+    ai_prompt: Optional[str] = None
     status: str
     emails_sent: int
     emails_left: int = 0
