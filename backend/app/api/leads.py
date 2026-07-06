@@ -21,7 +21,7 @@ def create_lead(lead: LeadCreate, db: Session = Depends(get_db)):
     return new_lead
 
 @router.get("/", response_model=List[LeadResponse])
-def get_leads(skip: int = 0, limit: int = 10000, db: Session = Depends(get_db)):
+def get_leads(skip: int = 0, limit: int = 50000, db: Session = Depends(get_db)):
     return db.query(Lead).offset(skip).limit(limit).all()
 
 @router.get("/{lead_id}", response_model=LeadResponse)
@@ -71,10 +71,13 @@ async def upload_leads(file: UploadFile = File(...), db: Session = Depends(get_d
         # Normalize column names to lowercase and strip whitespace to handle variations
         normalized_row = {str(k).strip().lower(): str(v).strip() for k, v in row.items() if k}
         
-        email = normalized_row.get("email", "")
-        if not email:
+        email_raw = normalized_row.get("email", "").strip()
+        if not email_raw:
             continue
             
+        # Some dirty CSVs contain multiple emails separated by commas or spaces. We will just take the first one.
+        email = email_raw.replace(';', ',').split(',')[0].strip()
+
         # Try to find name and company using possible fallback headers
         name = normalized_row.get("name") or normalized_row.get("person_name") or ""
         company = normalized_row.get("company") or normalized_row.get("company_name") or ""

@@ -77,10 +77,21 @@ export default function CampaignPage() {
   const sentLeadsCount = leads.filter(l => l.status === 'SENT').length;
   const pendingLeadsCount = leads.filter(l => l.status !== 'SENT').length;
 
+  const fullLeadsCount = leads.filter(l => l.name && l.company && l.status !== 'SENT').length;
+  const nameOnlyLeadsCount = leads.filter(l => l.name && !l.company && l.status !== 'SENT').length;
+  const companyOnlyLeadsCount = leads.filter(l => !l.name && l.company && l.status !== 'SENT').length;
+
   const filteredLeads = leads
     .filter(l => {
+      // Base status filtering (Primary Tabs)
       if (statusFilter === 'SENT') return l.status === 'SENT';
       if (statusFilter === 'PENDING') return l.status !== 'SENT';
+      
+      // Secondary logic for Full/Company/Name (Should EXCLUDE Sent leads)
+      if (statusFilter === 'FULL') return l.name && l.company && l.status !== 'SENT';
+      if (statusFilter === 'NAME_ONLY') return l.name && !l.company && l.status !== 'SENT';
+      if (statusFilter === 'COMPANY_ONLY') return !l.name && l.company && l.status !== 'SENT';
+      
       return true; // ALL
     })
     .filter(l => 
@@ -248,37 +259,59 @@ export default function CampaignPage() {
             <div className="border border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900 shadow-sm overflow-hidden flex flex-col transition-colors mt-2">
               
               {/* Segments & Quick Stats */}
-              <div className="bg-slate-50 dark:bg-slate-950 p-3 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row justify-between items-center gap-4">
-                <div className="flex bg-slate-200/50 dark:bg-slate-900 p-1 rounded-xl w-full sm:w-auto">
+              <div className="bg-slate-50 dark:bg-slate-950 p-3 border-b border-slate-200 dark:border-slate-800 flex flex-col xl:flex-row justify-between items-center gap-4">
+                <div className="flex flex-wrap bg-slate-200/50 dark:bg-slate-900 p-1 rounded-xl w-full xl:w-auto gap-1">
                   <button
                     type="button"
                     onClick={() => setStatusFilter('ALL')}
-                    className={`flex-1 sm:flex-none px-5 py-2 text-sm font-bold rounded-lg transition-all ${statusFilter === 'ALL' ? 'bg-white dark:bg-slate-800 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                    className={`flex-1 sm:flex-none px-4 py-1.5 text-xs sm:text-sm font-bold rounded-lg transition-all ${statusFilter === 'ALL' ? 'bg-white dark:bg-slate-800 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
                   >
                     All ({totalLeads})
                   </button>
                   <button
                     type="button"
                     onClick={() => setStatusFilter('PENDING')}
-                    className={`flex-1 sm:flex-none px-5 py-2 text-sm font-bold rounded-lg transition-all ${statusFilter === 'PENDING' ? 'bg-white dark:bg-slate-800 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                    className={`flex-1 sm:flex-none px-4 py-1.5 text-xs sm:text-sm font-bold rounded-lg transition-all ${statusFilter === 'PENDING' ? 'bg-white dark:bg-slate-800 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
                   >
                     Pending ({pendingLeadsCount})
                   </button>
                   <button
                     type="button"
                     onClick={() => setStatusFilter('SENT')}
-                    className={`flex-1 sm:flex-none px-5 py-2 text-sm font-bold rounded-lg transition-all ${statusFilter === 'SENT' ? 'bg-white dark:bg-slate-800 shadow-sm text-green-600 dark:text-green-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                    className={`flex-1 sm:flex-none px-4 py-1.5 text-xs sm:text-sm font-bold rounded-lg transition-all ${statusFilter === 'SENT' ? 'bg-white dark:bg-slate-800 shadow-sm text-green-600 dark:text-green-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
                   >
                     Sent ({sentLeadsCount})
                   </button>
+                  <div className="w-full sm:w-px h-px sm:h-auto bg-slate-200 dark:bg-slate-800 my-1 sm:my-0 sm:mx-1"></div>
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('FULL')}
+                    className={`flex-1 sm:flex-none px-4 py-1.5 text-xs sm:text-sm font-bold rounded-lg transition-all ${statusFilter === 'FULL' ? 'bg-white dark:bg-slate-800 shadow-sm text-purple-600 dark:text-purple-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                  >
+                    Full ({fullLeadsCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('COMPANY_ONLY')}
+                    className={`flex-1 sm:flex-none px-4 py-1.5 text-xs sm:text-sm font-bold rounded-lg transition-all ${statusFilter === 'COMPANY_ONLY' ? 'bg-white dark:bg-slate-800 shadow-sm text-purple-600 dark:text-purple-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                  >
+                    Company Only ({companyOnlyLeadsCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('NAME_ONLY')}
+                    className={`flex-1 sm:flex-none px-4 py-1.5 text-xs sm:text-sm font-bold rounded-lg transition-all ${statusFilter === 'NAME_ONLY' ? 'bg-white dark:bg-slate-800 shadow-sm text-purple-600 dark:text-purple-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                  >
+                    Name Only ({nameOnlyLeadsCount})
+                  </button>
                 </div>
                 
-                <div className="flex items-center gap-3 w-full sm:w-auto px-2 sm:px-0">
-                  <Search size={18} className="text-slate-400 hidden sm:block" />
+                <div className="flex items-center gap-3 w-full xl:w-auto px-2 xl:px-0">
+                  <Search size={18} className="text-slate-400 hidden xl:block" />
                   <input 
                     type="text" 
                     placeholder="Search leads by name..." 
-                    className="w-full sm:w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white px-4 py-2 rounded-xl focus:ring-2 focus:ring-blue-500/50 outline-none transition-all text-sm font-medium shadow-sm"
+                    className="w-full xl:w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white px-4 py-2 rounded-xl focus:ring-2 focus:ring-blue-500/50 outline-none transition-all text-sm font-medium shadow-sm"
                     value={searchTerm}
                     onChange={e => setSearchTerm(e.target.value)}
                   />

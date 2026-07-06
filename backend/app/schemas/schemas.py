@@ -5,9 +5,9 @@ from datetime import datetime
 class BulkDeleteRequest(BaseModel):
     lead_ids: List[int]
 class LeadBase(BaseModel):
-    name: str
-    company: str
-    email: EmailStr
+    name: Optional[str] = ""
+    company: Optional[str] = ""
+    email: str # Relaxed from EmailStr to standard str to handle dirty CSV data
 
 class LeadCreate(LeadBase):
     pass
