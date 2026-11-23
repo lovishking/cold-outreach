@@ -24,10 +24,10 @@ logging.basicConfig(
 logger = logging.getLogger("worker")
 
 # Constants
-MAX_EMAILS_PER_HOUR = 50
-MAX_EMAILS_PER_DAY = 300
-DELAY_MIN = 20
-DELAY_MAX = 60
+MAX_EMAILS_PER_HOUR = int(os.getenv("MAX_EMAILS_PER_HOUR", 50))
+MAX_EMAILS_PER_DAY = int(os.getenv("MAX_EMAILS_PER_DAY", 300))
+DELAY_MIN = int(os.getenv("DELAY_MIN", 20))
+DELAY_MAX = int(os.getenv("DELAY_MAX", 60))
 
 def send_real_email(to_email: str, subject: str, body: str, attachment_path: str = None, sender_acc=None):
     try:
@@ -129,18 +129,26 @@ def can_send_email(db: Session) -> bool:
     now = datetime.utcnow()
     hour_ago = now - timedelta(hours=1)
     day_ago = now - timedelta(days=1)
-    
+
     sent_last_hour = db.query(EmailLog).filter(
         EmailLog.sent_at >= hour_ago,
         EmailLog.status == "SENT"
     ).count()
-    
+
     sent_last_day = db.query(EmailLog).filter(
         EmailLog.sent_at >= day_ago,
         EmailLog.status == "SENT"
     ).count()
-    
-    return sent_last_hour < MAX_EMAILS_PER_HOUR and sent_last_day < MAX_EMAILS_PER_DAY
+
+    if sent_last_hour >= MAX_EMAILS_PER_HOUR:
+        logger.warning(f"Rate limit reached: Sent {sent_last_hour} emails in the last hour. Waiting...")
+        return False
+        
+    if sent_last_day >= MAX_EMAILS_PER_DAY:
+        logger.warning(f"Rate limit reached: Sent {sent_last_day} emails in the last day. Waiting...")
+        return False
+
+    return True
 
 async def email_sender_worker():
     logger.info("Starting email sender worker...")
@@ -151,27 +159,29 @@ async def email_sender_worker():
                 db.close()
                 await asyncio.sleep(60)
                 continue
-                
-            campaign = db.query(Campaign).filter(Campaign.status == "RUNNING").first()
-            if not campaign:
+
+            # Fetch ALL running campaigns instead of just the first one
+            active_campaigns = db.query(Campaign).filter(Campaign.status == "RUNNING").all()
+            
+            if not active_campaigns:
                 db.close()
                 await asyncio.sleep(10)
                 continue
+
+            log_to_process = None
+            campaign_to_process = None
+
+            # Round-robin or find the first available email across any active campaign
+            for campaign in active_campaigns:
+                now = datetime.utcnow()
                 
-            # Find a pending or retrying email log for this campaign
-            now = datetime.utcnow()
-            log = db.query(EmailLog).filter(
-                EmailLog.campaign_id == campaign.id,
-                EmailLog.status.in_(["PENDING", "RETRYING"]),
-            ).first()
-            
-            # Additional check for retrying
-            if log and log.status == "RETRYING" and log.next_retry_at and log.next_retry_at > now:
-                # Need to find one that is ready
+                # Check for pending logs
                 log = db.query(EmailLog).filter(
                     EmailLog.campaign_id == campaign.id,
                     EmailLog.status == "PENDING"
                 ).first()
+                
+                # If no pending, check for retrying logs that are ready
                 if not log:
                     log = db.query(EmailLog).filter(
                         EmailLog.campaign_id == campaign.id,
@@ -179,26 +189,32 @@ async def email_sender_worker():
                         EmailLog.next_retry_at <= now
                     ).first()
 
-            if not log:
-                # No more emails to send for this campaign
-                pending_count = db.query(EmailLog).filter(
-                    EmailLog.campaign_id == campaign.id,
-                    EmailLog.status.in_(["PENDING", "RETRYING"])
-                ).count()
-                
-                if pending_count == 0:
-                    campaign.status = "FINISHED"
-                    campaign.finished_at = datetime.utcnow()
-                    db.commit()
+                if log:
+                    log_to_process = log
+                    campaign_to_process = campaign
+                    break  # Found an email to send, exit the loop
+                else:
+                    # If this specific campaign has no more pending or retrying emails at all, mark it finished
+                    pending_count = db.query(EmailLog).filter(
+                        EmailLog.campaign_id == campaign.id,
+                        EmailLog.status.in_(["PENDING", "RETRYING"])
+                    ).count()
+
+                    if pending_count == 0:
+                        campaign.status = "FINISHED"
+                        campaign.finished_at = datetime.utcnow()
+                        db.commit()
+
+            if not log_to_process:
                 db.close()
                 await asyncio.sleep(10)
                 continue
-                
-            lead = log.lead
+
+            lead = log_to_process.lead
             
             # Find the sender
-            if campaign.sender_id:
-                sender_acc = db.query(Sender).filter(Sender.id == campaign.sender_id).first()
+            if campaign_to_process.sender_id:
+                sender_acc = db.query(Sender).filter(Sender.id == campaign_to_process.sender_id).first()
             else:
                 sender_acc = db.query(Sender).filter(Sender.is_default == True).first()
                 if not sender_acc:
@@ -206,18 +222,18 @@ async def email_sender_worker():
 
             # Execute AI or standard templating
             attachment_path = None
-            if campaign.use_ai_personalization:
+            if campaign_to_process.use_ai_personalization:
                 # Use AI specific subjects and prompts
-                subj_tpl = JinjaTemplate(campaign.ai_subject)
+                subj_tpl = JinjaTemplate(campaign_to_process.ai_subject)
                 subject = subj_tpl.render(name=lead.name, company=lead.company)
                 
-                logger.info(f"Initiating AI generation for company: {lead.company}...")
-                body = generate_ai_email_from_prompt(lead.company, lead.name, campaign.ai_prompt)
+                logger.info(f"[Campaign: {campaign_to_process.name}] Initiating AI generation for company: {lead.company}...")
+                body = generate_ai_email_from_prompt(lead.company, lead.name, campaign_to_process.ai_prompt)
             else:
                 # Use standard template
-                template = campaign.template
+                template = campaign_to_process.template
                 if not template:
-                    raise Exception(f"Campaign {campaign.id} is missing a template and AI is not enabled")
+                    raise Exception(f"Campaign {campaign_to_process.id} is missing a template and AI is not enabled")
                     
                 subj_tpl = JinjaTemplate(template.subject)
                 body_tpl = JinjaTemplate(template.body)
@@ -226,43 +242,43 @@ async def email_sender_worker():
                 body = body_tpl.render(name=lead.name, company=lead.company)
                 attachment_path = template.attachment_path
 
-            log.status = "SENDING"
-            log.subject = subject
+            log_to_process.status = "SENDING"
+            log_to_process.subject = subject
             db.commit()
 
-            logger.info(f"Sending email to {lead.email}...")
+            logger.info(f"[Campaign: {campaign_to_process.name}] Sending email to {lead.email} via {sender_acc.email if sender_acc else 'Default'}...")
             result = send_real_email(lead.email, subject, body, attachment_path, sender_acc)
-            
-            log.provider_message_id = result["msg_id"]
-            log.error_message = result["error"]
-            
+
+            log_to_process.provider_message_id = result["msg_id"]
+            log_to_process.error_message = result["error"]
+
             if result["success"]:
-                log.status = "SENT"
+                log_to_process.status = "SENT"
                 lead.status = "SENT"
-                log.sent_at = datetime.utcnow()
-                campaign.emails_sent += 1
+                log_to_process.sent_at = datetime.utcnow()
+                campaign_to_process.emails_sent += 1
             else:
                 if result["status"] == "BOUNCED":
-                    log.status = "BOUNCED"
+                    log_to_process.status = "BOUNCED"
                     lead.status = "BOUNCED"
                 else:
-                    if log.retry_count < 3:
-                        log.status = "RETRYING"
+                    if log_to_process.retry_count < 3:
+                        log_to_process.status = "RETRYING"
                         lead.status = "RETRYING"
-                        delay_mins = get_retry_delay(log.retry_count)
-                        log.retry_count += 1
-                        log.next_retry_at = datetime.utcnow() + timedelta(minutes=delay_mins)
+                        delay_mins = get_retry_delay(log_to_process.retry_count)
+                        log_to_process.retry_count += 1
+                        log_to_process.next_retry_at = datetime.utcnow() + timedelta(minutes=delay_mins)
                     else:
-                        log.status = "FAILED"
+                        log_to_process.status = "FAILED"
                         lead.status = "FAILED"
-                        
+
             db.commit()
             db.close()
-            
+
             delay = random.randint(DELAY_MIN, DELAY_MAX)
             logger.info(f"Sleeping for {delay} seconds...")
             await asyncio.sleep(delay)
-            
+
         except Exception as e:
             logger.error(f"Worker error: {e}")
             await asyncio.sleep(10)

@@ -55,6 +55,17 @@ export default function LeadsPage() {
     }
   };
 
+  const handleClearAllLeads = async () => {
+    if (window.confirm('⚠️ DANGER: Are you sure you want to permanently delete ALL leads in the database? This action cannot be undone.')) {
+      const allIds = leads.map(l => l.id);
+      if (allIds.length === 0) return;
+      
+      await deleteLeadsBulk(allIds);
+      setSelectedLeadIds(new Set());
+      loadLeads();
+    }
+  };
+
   const toggleLeadSelection = (id) => {
     const newSelected = new Set(selectedLeadIds);
     if (newSelected.has(id)) {
@@ -106,13 +117,24 @@ export default function LeadsPage() {
     <div className="pb-10">
       <div className="flex justify-between items-center mb-8">
         <h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Leads Management</h2>
-        <button 
-          onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 dark:text-slate-900 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-md shadow-slate-900/10 dark:shadow-white/10 active:scale-[0.98]"
-        >
-          {showForm ? <X size={18} strokeWidth={2.5} /> : <Plus size={18} strokeWidth={2.5} />}
-          {showForm ? 'Cancel' : 'Add Leads'}
-        </button>
+        <div className="flex items-center gap-3">
+          {leads.length > 0 && (
+            <button
+              onClick={handleClearAllLeads}
+              className="flex items-center gap-2 bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20 text-red-600 dark:text-red-400 px-5 py-2.5 rounded-xl font-bold transition-all shadow-sm active:scale-[0.98]"
+              title="Permanently Delete All Leads"
+            >
+              <Trash2 size={18} strokeWidth={2.5} /> Wipe DB
+            </button>
+          )}
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 dark:text-slate-900 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-md shadow-slate-900/10 dark:shadow-white/10 active:scale-[0.98]"
+          >
+            {showForm ? <X size={18} strokeWidth={2.5} /> : <Plus size={18} strokeWidth={2.5} />}
+            {showForm ? 'Cancel' : 'Add Leads'}
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
